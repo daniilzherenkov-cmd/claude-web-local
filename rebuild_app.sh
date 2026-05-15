@@ -12,7 +12,7 @@ fi
 
 cp server.py index.html ClaudeLocal.app/Contents/Resources/
 [ -f AppIcon.icns ] && cp AppIcon.icns ClaudeLocal.app/Contents/Resources/AppIcon.icns
-chmod +x ClaudeLocal.app/Contents/MacOS/run
+chmod +x ClaudeLocal.app/Contents/Resources/launcher.sh 2>/dev/null || true
 
 # Reset the quarantine bit so Gatekeeper doesn't re-flag it after edits.
 # macOS xattr has no recursive flag; iterate via find.

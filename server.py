@@ -48,6 +48,12 @@ HERE = Path(__file__).resolve().parent
 CONFIG_FILE = Path.home() / ".claude-web" / "config.json"
 SESSION_TTL_SECONDS = 30 * 60     # idle eviction
 PERMISSION_TIMEOUT = 10 * 60      # max time to wait for the user to click a button
+HEARTBEAT_GRACE_SECONDS = 60      # shut down N seconds after the last heartbeat
+HEARTBEAT_STARTUP_GRACE = 30      # don't auto-shutdown for the first N seconds after boot
+
+# Tracks the most recent browser activity (heartbeat or message). When this
+# is older than HEARTBEAT_GRACE_SECONDS the server self-terminates.
+_last_activity: float = 0.0
 
 logging.basicConfig(
     level=logging.INFO,
@@ -278,7 +284,9 @@ async def post_messages(req: web.Request) -> web.StreamResponse:
     if not user_text.strip():
         return web.json_response({"error": "empty message"}, status=400)
 
+    global _last_activity
     s.last_activity = time.monotonic()
+    _last_activity = s.last_activity
 
     resp = web.StreamResponse(
         status=200,
@@ -407,6 +415,31 @@ def _coerce_tool_content(content: Any) -> str:
     return str(content)
 
 
+async def post_heartbeat(req: web.Request) -> web.Response:
+    """Browser pings this every 15s while the page is open. Updates the
+    global activity clock so the auto-shutdown task knows there's a live tab.
+    Also accepts a `goodbye=true` flag from beforeunload sendBeacon — that
+    just means "I'm closing, don't stay up on my account" (no immediate
+    shutdown; the timer takes over).
+    """
+    global _last_activity
+    body = {}
+    if req.body_exists:
+        try:
+            body = await req.json()
+        except json.JSONDecodeError:
+            body = {}
+    if body.get("goodbye"):
+        # Backdate so the grace period expires sooner if no other tab pings in.
+        _last_activity = time.monotonic() - max(0, HEARTBEAT_GRACE_SECONDS - 5)
+    else:
+        _last_activity = time.monotonic()
+    sid = body.get("session_id") or req.headers.get("X-Session-Id", "")
+    if sid and sid in sessions:
+        sessions[sid].last_activity = _last_activity
+    return web.json_response({"ok": True})
+
+
 async def post_permission(req: web.Request) -> web.Response:
     try:
         body = await req.json()
@@ -449,12 +482,44 @@ async def evict_idle_sessions(app: web.Application) -> None:
                 await s.close()
 
 
+async def auto_shutdown_watcher(app: web.Application) -> None:
+    """Self-terminate the server when no browser tab has heartbeated in
+    HEARTBEAT_GRACE_SECONDS — i.e. the user closed the last tab.
+
+    We give a startup grace so we don't shut down before the browser has
+    had a chance to connect. We also skip shutdown while a turn is in
+    flight (any session has an active SSE queue) so the model can finish
+    its response uninterrupted.
+    """
+    global _last_activity
+    booted = time.monotonic()
+    log.info("auto-shutdown watchdog started (startup_grace=%ds, idle_grace=%ds)",
+             HEARTBEAT_STARTUP_GRACE, HEARTBEAT_GRACE_SECONDS)
+    while True:
+        await asyncio.sleep(10)
+        now = time.monotonic()
+        if (now - booted) < HEARTBEAT_STARTUP_GRACE:
+            continue
+        if any(s.current_queue is not None for s in sessions.values()):
+            _last_activity = now
+            continue
+        idle_for = now - _last_activity
+        if idle_for > HEARTBEAT_GRACE_SECONDS:
+            log.info("no heartbeat for %.0fs — shutting down", idle_for)
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
+
+
 async def on_startup(app: web.Application) -> None:
+    global _last_activity
+    _last_activity = time.monotonic()
     app["evictor"] = asyncio.create_task(evict_idle_sessions(app))
+    app["watchdog"] = asyncio.create_task(auto_shutdown_watcher(app))
 
 
 async def on_cleanup(app: web.Application) -> None:
     app["evictor"].cancel()
+    app["watchdog"].cancel()
     for sid in list(sessions.keys()):
         s = sessions.pop(sid, None)
         if s is not None:
@@ -472,6 +537,7 @@ def make_app() -> web.Application:
     app.router.add_post("/api/session/{sid}/new", post_session_new)
     app.router.add_post("/api/messages", post_messages)
     app.router.add_post("/api/permission", post_permission)
+    app.router.add_post("/api/heartbeat", post_heartbeat)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
