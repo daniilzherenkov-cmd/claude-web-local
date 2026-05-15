@@ -1,25 +1,63 @@
 #!/usr/bin/env python3
 """
-Local Claude web proxy — bridges browser to LiteLLM with auth.
-Stdlib only, no pip install needed. Works on Python 3.9+.
+Local server for Claude Local v2 — wraps claude-agent-sdk behind a browser UI.
+
+Endpoints:
+  GET  /                  -> index.html
+  GET  /api/config        -> { baseUrl, hasToken }
+  POST /api/config        -> save baseUrl / token to ~/.claude-web/config.json
+  POST /api/session       -> { session_id }, spins up a ClaudeSDKClient
+  POST /api/session/new   -> reset session (new chat)
+  POST /api/messages      -> SSE stream of typed events for one turn
+  POST /api/permission    -> { request_id, decision } resolves a pending tool prompt
 """
 from __future__ import annotations
-import http.server
-import http.client
+import asyncio
 import json
+import logging
 import os
-import socketserver
+import signal
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
+import time
+import uuid
 import webbrowser
 from pathlib import Path
+from typing import Any
+
+from aiohttp import web
+
+from claude_agent_sdk import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    UserMessage,
+    SystemMessage,
+    ResultMessage,
+    StreamEvent,
+    TextBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    PermissionResultAllow,
+    PermissionResultDeny,
+)
+
+# ---------- Configuration ----------
 
 PORT = int(os.environ.get("CLAUDE_WEB_PORT", "8765"))
 HERE = Path(__file__).resolve().parent
 CONFIG_FILE = Path.home() / ".claude-web" / "config.json"
+SESSION_TTL_SECONDS = 30 * 60     # idle eviction
+PERMISSION_TIMEOUT = 10 * 60      # max time to wait for the user to click a button
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("claude-local")
+
+
+# ---------- Persistent config (token + base URL) ----------
 
 def load_config() -> dict:
     cfg: dict = {}
@@ -44,183 +82,421 @@ def save_config(cfg: dict) -> None:
         pass
 
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(HERE), **kwargs)
+def export_auth_env() -> bool:
+    """Push baseUrl/token from the persisted config into os.environ so the
+    bundled Claude Code CLI subprocess inherits them."""
+    cfg = load_config()
+    if cfg.get("baseUrl"):
+        os.environ["ANTHROPIC_BASE_URL"] = cfg["baseUrl"]
+    if cfg.get("token"):
+        os.environ["ANTHROPIC_AUTH_TOKEN"] = cfg["token"]
+    return bool(cfg.get("baseUrl") and cfg.get("token"))
 
-    def log_message(self, fmt, *args):
-        sys.stderr.write(f"[{self.log_date_time_string()}] {fmt % args}\n")
 
-    def do_GET(self):
-        if self.path == "/api/config":
-            return self._get_config()
-        if self.path == "/api/models":
-            return self._proxy_models()
-        if self.path == "/" or self.path == "":
-            self.path = "/index.html"
-        return super().do_GET()
+# ---------- Session ----------
 
-    def do_POST(self):
-        if self.path == "/api/config":
-            return self._post_config()
-        if self.path == "/api/messages":
-            return self._proxy_messages()
-        return self.send_error(404)
+class Session:
+    """One ClaudeSDKClient per browser tab. Holds approval state."""
 
-    def _send_json(self, status: int, obj):
-        data = json.dumps(obj).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
+    def __init__(self, sid: str):
+        self.sid = sid
+        self.client: ClaudeSDKClient | None = None
+        self.always_allow: set[str] = set()
+        self.pending: dict[str, asyncio.Future] = {}
+        self.current_queue: asyncio.Queue | None = None
+        self.last_activity = time.monotonic()
+        self.lock = asyncio.Lock()  # serialize turns
+
+    async def start(self) -> None:
+        async def can_use_tool(tool_name: str, input_data: dict, context) -> Any:
+            if tool_name in self.always_allow:
+                log.info("auto-allow [%s] %s", tool_name, _summarize(tool_name, input_data))
+                return PermissionResultAllow(updated_input=input_data)
+
+            req_id = uuid.uuid4().hex
+            fut: asyncio.Future = asyncio.get_event_loop().create_future()
+            self.pending[req_id] = fut
+            await self.broadcast({
+                "type": "permission_request",
+                "id": req_id,
+                "tool": tool_name,
+                "input": input_data,
+                "summary": _summarize(tool_name, input_data),
+            })
+            try:
+                decision = await asyncio.wait_for(fut, timeout=PERMISSION_TIMEOUT)
+            except asyncio.TimeoutError:
+                self.pending.pop(req_id, None)
+                log.warning("permission timeout [%s]", tool_name)
+                return PermissionResultDeny(
+                    message="The user did not respond to the approval prompt in time."
+                )
+            if decision == "always":
+                self.always_allow.add(tool_name)
+            if decision in ("allow", "always"):
+                return PermissionResultAllow(updated_input=input_data)
+            return PermissionResultDeny(
+                message=f"The user denied the {tool_name} call in the browser."
+            )
+
+        opts = ClaudeAgentOptions(
+            permission_mode="default",
+            setting_sources=["user", "project"],
+            cwd=os.path.expanduser("~"),
+            can_use_tool=can_use_tool,
+            include_partial_messages=True,
+        )
+        self.client = ClaudeSDKClient(options=opts)
+        await self.client.connect()
+        log.info("session %s connected", self.sid[:8])
+
+    async def close(self) -> None:
+        # Resolve any pending approvals as denials so we don't leak futures.
+        for req_id, fut in list(self.pending.items()):
+            if not fut.done():
+                fut.set_result("deny")
+            self.pending.pop(req_id, None)
+        if self.client is not None:
+            try:
+                await self.client.disconnect()
+            except Exception as e:
+                log.warning("session %s disconnect error: %s", self.sid[:8], e)
+            self.client = None
+
+    async def broadcast(self, evt: dict) -> None:
+        """Send a typed event to the current SSE stream, if any."""
+        if self.current_queue is not None:
+            try:
+                await self.current_queue.put(json.dumps(evt))
+            except Exception as e:
+                log.warning("broadcast failed: %s", e)
+
+
+# Global session registry
+sessions: dict[str, Session] = {}
+
+
+def _summarize(tool: str, input_data: dict) -> str:
+    """One-line human-readable summary of a tool call for the approval card."""
+    try:
+        if tool == "Bash":
+            return str(input_data.get("command", ""))[:240]
+        if tool in ("Read", "Glob", "Grep"):
+            return str(input_data.get("file_path") or input_data.get("path") or
+                       input_data.get("pattern") or "")
+        if tool == "Edit":
+            f = input_data.get("file_path", "")
+            return f"{f}"
+        if tool == "Write":
+            return str(input_data.get("file_path", ""))
+        if tool == "WebFetch":
+            return str(input_data.get("url", ""))
+        if tool == "Agent":
+            return str(input_data.get("description") or input_data.get("subagent_type", ""))
+        return json.dumps(input_data)[:240]
+    except Exception:
+        return tool
+
+
+# ---------- HTTP handlers ----------
+
+async def get_config(req: web.Request) -> web.Response:
+    cfg = load_config()
+    return web.json_response({
+        "baseUrl": cfg.get("baseUrl", ""),
+        "hasToken": bool(cfg.get("token")),
+    })
+
+
+async def post_config(req: web.Request) -> web.Response:
+    try:
+        body = await req.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    cfg = load_config()
+    for k in ("baseUrl", "token"):
+        v = body.get(k)
+        if isinstance(v, str) and v.strip():
+            cfg[k] = v.strip()
+    save_config(cfg)
+    export_auth_env()
+    return web.json_response({"ok": True})
+
+
+async def post_session(req: web.Request) -> web.Response:
+    if not export_auth_env():
+        return web.json_response(
+            {"error": "Auth not configured. Open Settings and paste a token."},
+            status=400,
+        )
+    sid = uuid.uuid4().hex
+    s = Session(sid)
+    try:
+        await s.start()
+    except Exception as e:
+        log.exception("session start failed")
+        return web.json_response({"error": f"Could not start session: {e}"}, status=500)
+    sessions[sid] = s
+    log.info("new session %s (total: %d)", sid[:8], len(sessions))
+    return web.json_response({"session_id": sid})
+
+
+async def post_session_new(req: web.Request) -> web.Response:
+    sid = req.match_info["sid"]
+    old = sessions.pop(sid, None)
+    if old is not None:
+        await old.close()
+    if not export_auth_env():
+        return web.json_response(
+            {"error": "Auth not configured."},
+            status=400,
+        )
+    new_sid = uuid.uuid4().hex
+    s = Session(new_sid)
+    try:
+        await s.start()
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+    sessions[new_sid] = s
+    return web.json_response({"session_id": new_sid})
+
+
+async def post_messages(req: web.Request) -> web.StreamResponse:
+    sid = req.headers.get("X-Session-Id") or req.query.get("session_id", "")
+    s = sessions.get(sid)
+    if s is None:
+        return web.json_response(
+            {"error": "Unknown or expired session_id. Reload the page."},
+            status=400,
+        )
+
+    try:
+        body = await req.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    user_text = body.get("message") or body.get("prompt") or ""
+    if not user_text.strip():
+        return web.json_response({"error": "empty message"}, status=400)
+
+    s.last_activity = time.monotonic()
+
+    resp = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+    await resp.prepare(req)
+
+    queue: asyncio.Queue = asyncio.Queue()
+
+    # Pump events from the queue to the SSE response.
+    async def pump():
+        while True:
+            data = await queue.get()
+            if data is None:
+                break
+            try:
+                await resp.write(f"data: {data}\n\n".encode("utf-8"))
+            except (ConnectionResetError, asyncio.CancelledError):
+                break
         try:
-            self.wfile.write(data)
-        except (BrokenPipeError, ConnectionResetError):
+            await resp.write_eof()
+        except Exception:
             pass
 
-    def _read_body(self) -> bytes:
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        return self.rfile.read(length) if length else b""
+    pump_task = asyncio.create_task(pump())
 
-    def _get_config(self):
-        cfg = load_config()
-        self._send_json(200, {
-            "baseUrl": cfg.get("baseUrl", ""),
-            "model": cfg.get("model", "claude-sonnet-4-6"),
-            "hasToken": bool(cfg.get("token")),
-        })
+    # Only one turn per session at a time.
+    if s.lock.locked():
+        await queue.put(json.dumps({
+            "type": "error",
+            "message": "Another message is in progress in this session.",
+        }))
+        await queue.put(None)
+        await pump_task
+        return resp
 
-    def _post_config(self):
+    async with s.lock:
+        s.current_queue = queue
         try:
-            body = json.loads(self._read_body() or b"{}")
-        except json.JSONDecodeError:
-            return self._send_json(400, {"error": "invalid JSON"})
-        cfg = load_config()
-        for k in ("baseUrl", "token", "model"):
-            v = body.get(k)
-            if isinstance(v, str) and v.strip():
-                cfg[k] = v.strip()
-        save_config(cfg)
-        self._send_json(200, {"ok": True})
-
-    def _upstream(self, method: str, path: str, body: bytes | None = None,
-                  extra_headers: dict | None = None):
-        cfg = load_config()
-        base = cfg.get("baseUrl") or ""
-        token = cfg.get("token") or ""
-        if not base or not token:
-            return None, None, "Not configured. Open Settings and paste your LiteLLM URL + token."
-        url = f"{base.rstrip('/')}{path}"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "anthropic-version": "2023-06-01",
-        }
-        if extra_headers:
-            headers.update(extra_headers)
-        req = urllib.request.Request(url, data=body, method=method, headers=headers)
-        try:
-            resp = urllib.request.urlopen(req, timeout=600)
-            return resp, None, None
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", "ignore")
-            return None, e.code, err_body
+            assert s.client is not None
+            await s.client.query(user_text)
+            async for msg in s.client.receive_response():
+                await _emit(s, msg)
+            await s.broadcast({"type": "done"})
+        except asyncio.CancelledError:
+            log.info("session %s turn cancelled", s.sid[:8])
+            raise
         except Exception as e:
-            return None, 502, str(e)
-
-    def _proxy_models(self):
-        resp, code, err = self._upstream("GET", "/v1/models")
-        if resp is None:
-            return self._send_json(code or 400, {"error": err})
-        try:
-            data = resp.read()
+            log.exception("turn error")
+            await s.broadcast({"type": "error", "message": str(e)})
         finally:
-            resp.close()
-        try:
-            parsed = json.loads(data)
-        except json.JSONDecodeError:
-            parsed = {"data": []}
-        models = []
-        for m in parsed.get("data", []):
-            mid = m.get("id", "")
-            if mid.startswith("claude"):
-                models.append(mid)
-        models.sort(key=_model_sort_key, reverse=True)
-        self._send_json(200, {"models": models})
-
-    def _proxy_messages(self):
-        body = self._read_body()
-        resp, code, err = self._upstream(
-            "POST", "/v1/messages", body=body,
-            extra_headers={"Content-Type": "application/json"},
-        )
-        if resp is None:
-            return self._send_json(code or 502, {"error": err})
-
-        try:
-            self.send_response(resp.status)
-            ct = resp.headers.get("Content-Type") or "text/event-stream"
-            self.send_header("Content-Type", ct)
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("X-Accel-Buffering", "no")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            while True:
-                chunk = resp.read(1024)
-                if not chunk:
-                    break
-                try:
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError):
-                    break
-        finally:
+            s.current_queue = None
+            await queue.put(None)
             try:
-                resp.close()
+                await pump_task
             except Exception:
                 pass
 
-
-def _model_sort_key(model_id: str) -> tuple:
-    """Sort newer Claude models above older ones, family-grouped."""
-    family_order = {"opus": 3, "sonnet": 2, "haiku": 1}
-    family = 0
-    for k, v in family_order.items():
-        if k in model_id:
-            family = v
-            break
-    parts = model_id.split("-")
-    nums = []
-    for p in parts:
-        try:
-            nums.append(int(p))
-        except ValueError:
-            pass
-    return (family, tuple(nums))
+    return resp
 
 
-class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
+async def _emit(s: Session, msg: Any) -> None:
+    """Translate one SDK message into typed SSE events for the browser."""
+    if isinstance(msg, AssistantMessage):
+        for blk in msg.content:
+            if isinstance(blk, TextBlock):
+                # Final text — sent in addition to the per-token deltas (see
+                # StreamEvent below) so the browser can collapse incomplete
+                # streamed text into the canonical version on turn end.
+                await s.broadcast({"type": "text_block", "text": blk.text})
+            elif isinstance(blk, ToolUseBlock):
+                await s.broadcast({
+                    "type": "tool_use",
+                    "id": blk.id,
+                    "name": blk.name,
+                    "input": blk.input,
+                })
+            elif isinstance(blk, ToolResultBlock):
+                await s.broadcast({
+                    "type": "tool_result",
+                    "tool_use_id": blk.tool_use_id,
+                    "content": _coerce_tool_content(blk.content),
+                    "is_error": bool(getattr(blk, "is_error", False)),
+                })
+    elif isinstance(msg, UserMessage):
+        # Tool results come back as UserMessage(content=[ToolResultBlock(...)])
+        for blk in (msg.content if isinstance(msg.content, list) else []):
+            if isinstance(blk, ToolResultBlock):
+                await s.broadcast({
+                    "type": "tool_result",
+                    "tool_use_id": blk.tool_use_id,
+                    "content": _coerce_tool_content(blk.content),
+                    "is_error": bool(getattr(blk, "is_error", False)),
+                })
+    elif isinstance(msg, StreamEvent):
+        # Token-level streaming. Pass the raw Anthropic SSE event straight through.
+        await s.broadcast({"type": "stream_event", "event": msg.event})
+    elif isinstance(msg, ResultMessage):
+        usage = getattr(msg, "usage", None)
+        await s.broadcast({
+            "type": "turn_result",
+            "subtype": getattr(msg, "subtype", None),
+            "usage": usage if isinstance(usage, dict) else None,
+        })
+    # SystemMessage and other lifecycle messages: not surfaced to the browser.
 
 
-def main():
+def _coerce_tool_content(content: Any) -> str:
+    """Tool result content can be a string, a list of blocks, or arbitrary —
+    flatten to a string for the browser to render."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(str(item["text"]))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
+
+
+async def post_permission(req: web.Request) -> web.Response:
+    try:
+        body = await req.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    sid = body.get("session_id") or req.headers.get("X-Session-Id", "")
+    s = sessions.get(sid)
+    if s is None:
+        return web.json_response({"error": "unknown session"}, status=400)
+    req_id = body.get("request_id")
+    decision = body.get("decision")
+    if decision not in ("allow", "always", "deny"):
+        return web.json_response({"error": "invalid decision"}, status=400)
+    fut = s.pending.pop(req_id, None)
+    if fut is None or fut.done():
+        return web.json_response({"error": "no pending request with that id"}, status=400)
+    fut.set_result(decision)
+    return web.json_response({"ok": True})
+
+
+async def get_root(req: web.Request) -> web.Response:
+    p = HERE / "index.html"
+    if not p.exists():
+        return web.Response(status=404, text="index.html missing")
+    return web.Response(body=p.read_bytes(), content_type="text/html")
+
+
+# ---------- Background eviction ----------
+
+async def evict_idle_sessions(app: web.Application) -> None:
+    while True:
+        await asyncio.sleep(60)
+        now = time.monotonic()
+        stale = [sid for sid, s in sessions.items()
+                 if (now - s.last_activity) > SESSION_TTL_SECONDS]
+        for sid in stale:
+            log.info("evicting idle session %s", sid[:8])
+            s = sessions.pop(sid, None)
+            if s is not None:
+                await s.close()
+
+
+async def on_startup(app: web.Application) -> None:
+    app["evictor"] = asyncio.create_task(evict_idle_sessions(app))
+
+
+async def on_cleanup(app: web.Application) -> None:
+    app["evictor"].cancel()
+    for sid in list(sessions.keys()):
+        s = sessions.pop(sid, None)
+        if s is not None:
+            await s.close()
+
+
+# ---------- App factory & main ----------
+
+def make_app() -> web.Application:
+    app = web.Application(client_max_size=8 * 1024 * 1024)
+    app.router.add_get("/", get_root)
+    app.router.add_get("/api/config", get_config)
+    app.router.add_post("/api/config", post_config)
+    app.router.add_post("/api/session", post_session)
+    app.router.add_post("/api/session/{sid}/new", post_session_new)
+    app.router.add_post("/api/messages", post_messages)
+    app.router.add_post("/api/permission", post_permission)
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
+    return app
+
+
+def main() -> None:
+    has_auth = export_auth_env()
     url = f"http://localhost:{PORT}/"
-    cfg = load_config()
-    print(f"\n  Claude web running at {url}")
-    if cfg.get("token") and cfg.get("baseUrl"):
-        print(f"  Auth ready (baseUrl={cfg['baseUrl']})")
+    log.info("Claude Local v2 running at %s", url)
+    if has_auth:
+        log.info("Auth ready (baseUrl=%s)", os.environ.get("ANTHROPIC_BASE_URL"))
     else:
-        print("  Token not configured yet — paste it in the Settings modal that appears.")
-    print("  Press Ctrl+C to stop.\n")
+        log.warning("Token not configured — Settings dialog will prompt the user")
     if "--no-open" not in sys.argv:
         try:
             webbrowser.open(url)
         except Exception:
             pass
-    try:
-        ThreadingServer(("127.0.0.1", PORT), Handler).serve_forever()
-    except KeyboardInterrupt:
-        print("\n  Bye.")
+    web.run_app(
+        make_app(),
+        host="127.0.0.1",
+        port=PORT,
+        access_log=None,
+        print=lambda *a, **k: None,  # silence aiohttp's banner
+    )
 
 
 if __name__ == "__main__":
