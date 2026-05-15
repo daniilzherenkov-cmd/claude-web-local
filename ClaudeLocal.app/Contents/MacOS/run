@@ -1,0 +1,78 @@
+#!/bin/zsh
+# Claude Local — launched by macOS Launch Services when the user
+# double-clicks ClaudeLocal.app. Starts the local proxy and opens the browser.
+
+set -u
+
+BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RES="$BUNDLE_DIR/Resources"
+LOG="$HOME/Library/Logs/ClaudeLocal.log"
+mkdir -p "$(dirname "$LOG")"
+
+PORT="${CLAUDE_WEB_PORT:-8765}"
+URL="http://localhost:${PORT}/"
+
+# Source the user's shell so ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL,
+# /opt/homebrew/bin etc. are available. Errors silenced — if env is
+# missing, the UI's Settings dialog handles it.
+[ -f ~/.zshenv ] && source ~/.zshenv 2>/dev/null || true
+[ -f ~/.zprofile ] && source ~/.zprofile 2>/dev/null || true
+[ -f ~/.zshrc ] && source ~/.zshrc 2>/dev/null || true
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+# ---------- Helper: show a macOS dialog and return the button label ----------
+dialog() {
+  # $1 = message, $2 = comma-separated button list, $3 = default button, $4 = icon (note|stop|caution)
+  local msg="$1" buttons="$2" default="$3" icon="${4:-note}"
+  osascript <<APPLESCRIPT 2>/dev/null
+try
+  set _r to display dialog "${msg}" buttons {${buttons}} default button "${default}" with icon ${icon} with title "Claude Local"
+  return button returned of _r
+on error
+  return "Cancel"
+end try
+APPLESCRIPT
+}
+
+# ---------- Pre-flight: python3 ----------
+if ! command -v python3 >/dev/null 2>&1; then
+  dialog "Python 3 is required to run Claude Local.\n\nInstall the Xcode Command Line Tools by opening Terminal and running:\n\nxcode-select --install\n\nThen try again." "\"OK\"" "OK" stop >/dev/null
+  exit 1
+fi
+
+# ---------- Pre-flight: port ----------
+if lsof -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+  # Something is listening. Is it us?
+  if curl -fsS --max-time 1 "${URL}api/config" 2>/dev/null | grep -q '"hasToken"'; then
+    CHOICE=$(dialog "Claude Local is already running.\n\nOpen it in your browser?" "\"Cancel\", \"Open in Browser\"" "Open in Browser" note)
+    if [[ "$CHOICE" == "Open in Browser" ]]; then
+      open "${URL}"
+    fi
+    exit 0
+  else
+    dialog "Port ${PORT} is already in use by another program.\n\nQuit that program first, or launch with a different port from Terminal:\n\nCLAUDE_WEB_PORT=9000 open '${BUNDLE_DIR%/Contents}'" "\"OK\"" "OK" stop >/dev/null
+    exit 1
+  fi
+fi
+
+# ---------- Run ----------
+cd "$RES" || {
+  dialog "Could not find Claude Local resources.\nThe app bundle may be damaged — try downloading a fresh copy." "\"OK\"" "OK" stop >/dev/null
+  exit 1
+}
+
+{
+  echo ""
+  echo "===== $(date '+%Y-%m-%d %H:%M:%S') ====="
+  echo "PORT=${PORT}"
+  echo "ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-(unset)}"
+  echo "ANTHROPIC_AUTH_TOKEN=$([ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && echo "(set)" || echo "(unset)")"
+} >> "$LOG"
+
+# server.py opens the browser itself via webbrowser.open. stdout/stderr
+# go to the log so the .app stays silent. If startup fails, surface it.
+if ! python3 server.py >> "$LOG" 2>&1; then
+  TAIL=$(tail -10 "$LOG" | sed 's/"/\\"/g')
+  dialog "Claude Local failed to start.\n\nLast lines from the log:\n\n${TAIL}\n\nFull log: ~/Library/Logs/ClaudeLocal.log" "\"OK\"" "OK" stop >/dev/null
+  exit 1
+fi
