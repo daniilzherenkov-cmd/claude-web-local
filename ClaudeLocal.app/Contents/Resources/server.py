@@ -24,6 +24,8 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+import urllib.request
+
 from aiohttp import web
 
 from claude_agent_sdk import (
@@ -104,8 +106,9 @@ def export_auth_env() -> bool:
 class Session:
     """One ClaudeSDKClient per browser tab. Holds approval state."""
 
-    def __init__(self, sid: str):
+    def __init__(self, sid: str, model: str | None = None):
         self.sid = sid
+        self.model = model  # None = SDK default
         self.client: ClaudeSDKClient | None = None
         self.always_allow: set[str] = set()
         self.pending: dict[str, asyncio.Future] = {}
@@ -151,6 +154,7 @@ class Session:
             cwd=os.path.expanduser("~"),
             can_use_tool=can_use_tool,
             include_partial_messages=True,
+            model=self.model or None,
         )
         self.client = ClaudeSDKClient(options=opts)
         await self.client.connect()
@@ -206,6 +210,46 @@ def _summarize(tool: str, input_data: dict) -> str:
 
 # ---------- HTTP handlers ----------
 
+async def get_models(req: web.Request) -> web.Response:
+    """Proxy /v1/models, filter to Claude models and sort newest-first."""
+    cfg = load_config()
+    base = cfg.get("baseUrl") or ""
+    token = cfg.get("token") or ""
+    if not base or not token:
+        return web.json_response({"models": []})
+    try:
+        req_out = urllib.request.Request(
+            f"{base.rstrip('/')}/v1/models",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "curl/8.7.1",  # Cloudflare WAF blocks Python-urllib by default
+            },
+        )
+        with urllib.request.urlopen(req_out, timeout=10) as resp:
+            payload = json.loads(resp.read())
+        models = [
+            m["id"] for m in payload.get("data", [])
+            if isinstance(m.get("id"), str) and m["id"].startswith("claude")
+        ]
+        models.sort(key=_model_sort_key, reverse=True)
+        return web.json_response({"models": models})
+    except Exception as e:
+        log.warning("could not fetch models: %s", e)
+        return web.json_response({"models": []})
+
+
+def _model_sort_key(model_id: str) -> tuple:
+    family_order = {"opus": 3, "sonnet": 2, "haiku": 1}
+    family = next((v for k, v in family_order.items() if k in model_id), 0)
+    nums = []
+    for part in model_id.split("-"):
+        try:
+            nums.append(int(part))
+        except ValueError:
+            pass
+    return (family, tuple(nums))
+
+
 async def get_config(req: web.Request) -> web.Response:
     cfg = load_config()
     return web.json_response({
@@ -235,16 +279,22 @@ async def post_session(req: web.Request) -> web.Response:
             {"error": "Auth not configured. Open Settings and paste a token."},
             status=400,
         )
+    body: dict = {}
+    try:
+        body = await req.json()
+    except Exception:
+        pass
+    model: str | None = body.get("model") or None
     sid = uuid.uuid4().hex
-    s = Session(sid)
+    s = Session(sid, model=model)
     try:
         await s.start()
     except Exception as e:
         log.exception("session start failed")
         return web.json_response({"error": f"Could not start session: {e}"}, status=500)
     sessions[sid] = s
-    log.info("new session %s (total: %d)", sid[:8], len(sessions))
-    return web.json_response({"session_id": sid})
+    log.info("new session %s model=%s (total: %d)", sid[:8], model or "default", len(sessions))
+    return web.json_response({"session_id": sid, "model": model})
 
 
 async def get_session(req: web.Request) -> web.Response:
@@ -539,6 +589,7 @@ async def on_cleanup(app: web.Application) -> None:
 def make_app() -> web.Application:
     app = web.Application(client_max_size=8 * 1024 * 1024)
     app.router.add_get("/", get_root)
+    app.router.add_get("/api/models", get_models)
     app.router.add_get("/api/config", get_config)
     app.router.add_post("/api/config", post_config)
     app.router.add_post("/api/session", post_session)
