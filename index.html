@@ -1054,7 +1054,12 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
       // Stale — fall through to create a fresh one
       localStorage.removeItem('claudeWebSession');
     }
-    const r = await fetch('/api/session', { method: 'POST' });
+    const model = els.modelSelect.value || null;
+    const r = await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
       throw new Error(data.error || ('HTTP ' + r.status));
@@ -1418,6 +1423,57 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     }
   }
 
+  // ----- Model picker -----
+  const FALLBACK_MODELS = ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
+
+  function prettyModel(id) {
+    const m = id.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-(\d{8}))?/);
+    if (!m) return id;
+    const fam = m[1][0].toUpperCase() + m[1].slice(1);
+    const ver = m[2] + '.' + m[3];
+    if (m[4]) return `${fam} ${ver} (${m[4].slice(0,4)}-${m[4].slice(4,6)}-${m[4].slice(6,8)})`;
+    return `${fam} ${ver}`;
+  }
+
+  async function loadModels() {
+    let models = FALLBACK_MODELS.slice();
+    try {
+      const r = await fetch('/api/models');
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data.models) && data.models.length) models = data.models;
+      }
+    } catch { /* keep fallback */ }
+
+    const current = els.modelSelect.value;
+    els.modelSelect.innerHTML = '';
+    for (const id of models) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = prettyModel(id);
+      els.modelSelect.appendChild(opt);
+    }
+    // Restore the previously selected model if still available, else default
+    if (models.includes(current)) els.modelSelect.value = current;
+    else if (models.includes('claude-sonnet-4-6')) els.modelSelect.value = 'claude-sonnet-4-6';
+  }
+
+  els.modelSelect.addEventListener('change', async () => {
+    // Model change requires a fresh session (SDK bakes model in at session creation).
+    // Treat it like "New chat".
+    if (currentController) currentController.abort();
+    els.messages.innerHTML = '';
+    toolCards.clear();
+    streamingMsg = null;
+    streamingText = '';
+    activePermissionRequest = null;
+    clearHistory();
+    ui.showEmptyState();
+    try { await newSession(); }
+    catch (e) { appendErrorMsg('Could not start session with new model: ' + e.message); }
+    els.composerInput.focus();
+  });
+
   // ----- Heartbeat (keeps the server alive while a tab is open) -----
   function sendHeartbeat(goodbye) {
     const body = JSON.stringify({ session_id: sessionId, goodbye: !!goodbye });
@@ -1464,6 +1520,7 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     rehydrateHistory();  // paint past conversation immediately, before any await
     const ok = await loadConfig();
     if (ok) {
+      await loadModels();  // populate dropdown before creating session (session needs model)
       try { await ensureSession(); sendHeartbeat(false); }
       catch (e) { showBanner('Could not start a Claude session: ' + e.message, 'error'); }
     }
