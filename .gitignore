@@ -19,3 +19,6 @@ __pycache__/
 # User config — never commit tokens
 .claude-web/
 config.json
+
+# Bundled Python venv — built locally by build_venv.sh, ~250MB
+ClaudeLocal.app/Contents/Resources/venv/

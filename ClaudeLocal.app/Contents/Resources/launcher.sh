@@ -34,20 +34,20 @@ end try
 APPLESCRIPT
 }
 
-# ---------- Pre-flight: python3 ----------
-if ! command -v python3 >/dev/null 2>&1; then
-  dialog "Python 3 is required to run Claude Local.\n\nInstall the Xcode Command Line Tools by opening Terminal and running:\n\nxcode-select --install\n\nThen try again." "\"OK\"" "OK" stop >/dev/null
+# ---------- Pre-flight: bundled venv ----------
+VENV_PY="$RES/venv/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+  dialog "Claude Local's bundled Python environment is missing.\n\nIf you cloned the repo, run:\n\n./build_venv.sh\n\nIf you downloaded a release, the .app bundle is incomplete — try a fresh download." "\"OK\"" "OK" stop >/dev/null
   exit 1
 fi
 
 # ---------- Pre-flight: port ----------
+# If something already holds the port, distinguish "us" (already running)
+# from "someone else". When it's us, just open the browser silently — no
+# friction dialog. When it's something else, surface a clear error.
 if lsof -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
-  # Something is listening. Is it us?
   if curl -fsS --max-time 1 "${URL}api/config" 2>/dev/null | grep -q '"hasToken"'; then
-    CHOICE=$(dialog "Claude Local is already running.\n\nOpen it in your browser?" "\"Cancel\", \"Open in Browser\"" "Open in Browser" note)
-    if [[ "$CHOICE" == "Open in Browser" ]]; then
-      open "${URL}"
-    fi
+    open "${URL}"
     exit 0
   else
     dialog "Port ${PORT} is already in use by another program.\n\nQuit that program first, or launch with a different port from Terminal:\n\nCLAUDE_WEB_PORT=9000 open '${BUNDLE_DIR%/Contents}'" "\"OK\"" "OK" stop >/dev/null
@@ -71,7 +71,7 @@ cd "$RES" || {
 
 # server.py opens the browser itself via webbrowser.open. stdout/stderr
 # go to the log so the .app stays silent. If startup fails, surface it.
-if ! python3 server.py >> "$LOG" 2>&1; then
+if ! "$VENV_PY" server.py >> "$LOG" 2>&1; then
   TAIL=$(tail -10 "$LOG" | sed 's/"/\\"/g')
   dialog "Claude Local failed to start.\n\nLast lines from the log:\n\n${TAIL}\n\nFull log: ~/Library/Logs/ClaudeLocal.log" "\"OK\"" "OK" stop >/dev/null
   exit 1

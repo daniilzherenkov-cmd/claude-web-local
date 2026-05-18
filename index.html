@@ -82,6 +82,15 @@
     border-radius: 50%;
     transform: translateY(-1px);
   }
+  .wordmark .dh-logo {
+    height: 18px;
+    width: auto;
+    margin-left: 4px;
+    vertical-align: middle;
+    image-rendering: -webkit-optimize-contrast;
+    transform: translateY(-2px);
+    opacity: 0.95;
+  }
 
   .model-select-wrap { position: relative; margin-right: 4px; }
   .model-select {
@@ -504,6 +513,150 @@
     *, *::before, *::after { animation-duration: 0.01ms !important; transition: none !important; }
     .main { scroll-behavior: auto; }
   }
+  /* ----- Tool cards (v2) ----- */
+  .tool-card {
+    align-self: stretch;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    box-shadow: var(--shadow-md);
+  }
+  .tool-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    background: var(--bg-pill);
+    border-bottom: 1px solid var(--border);
+  }
+  .tool-card-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .tool-card-status {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .tool-pending .tool-card-status { background: #fef9e7; color: #7a5e0d; }
+  .tool-done    .tool-card-status { background: #e7f3ea; color: #2f7a3f; }
+  .tool-error   .tool-card-status { background: #fbeae5; color: #8a3422; }
+  .tool-card-body {
+    padding: 12px 14px;
+    background: var(--bg-elev);
+  }
+  .tool-card-input,
+  .tool-card-result pre {
+    margin: 0;
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tool-card-result {
+    margin-top: 10px;
+  }
+  .tool-card-result summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px 0;
+    user-select: none;
+  }
+  .tool-card-result summary:hover { color: var(--text); }
+  .tool-card-result[open] summary { margin-bottom: 6px; }
+
+  /* ----- Permission cards (v2) ----- */
+  .permission-card {
+    align-self: stretch;
+    background: #fef9e7;
+    border: 1px solid #f0e0a8;
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--text);
+    box-shadow: var(--shadow-md);
+  }
+  .permission-card-header {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .permission-card-tool {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .permission-card-prompt {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .permission-card-summary {
+    margin: 0 0 10px;
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .permission-card-details {
+    margin: 0 0 12px;
+  }
+  .permission-card-details summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+    user-select: none;
+    padding: 2px 0;
+  }
+  .permission-card-details summary:hover { color: var(--text); }
+  .permission-card-details pre {
+    margin: 6px 0 0;
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+  }
+  .permission-card-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .permission-card-actions .btn { font-size: 13px; }
+  .permission-card-decided {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: right;
+  }
+
 </style>
 </head>
 <body>
@@ -511,6 +664,7 @@
 <header class="topbar" id="topbar">
   <div class="wordmark">
     Claude<span class="dot" aria-hidden="true"></span>
+    <img class="dh-logo" alt="DH" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAABzlBMVEUAAADWHSbWISbWICbWKSbWISfWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICbWICb///+EunnhAAAAmHRSTlMAAAAAAAAEJl6Kn56GWCECLJbj/fzeiyQDWt3VTQFl7+lVW+3fNVDn8KzzqwtF4fbs8U482nhBeahUHKMy0rUKE9HcKspH0P73I8H1ZBqAt18HInLmFrwYkuARofSPFwVRCFL7jpcGDUiiZoE4aXy7G77or42RK4PEHfrbakvMMdm6qihr+bEM1vKufSfqoCDFmDlTkG5KPhOwtToAAAABYktHRJkB1jaoAAAAB3RJTUUH5wMeDiYmK77wNQAAAbVJREFUOMvFkuc/QlEYx/EYKRQ3XFIyCsneyR5lZEZGpOy994rsvZ0/1z333NJN3vK8OZ/zfH/nOc8KCPgXCwwCgODfKISGCcKFoojIKDH4wyCJjqEQY9LYuHj4IQE6IRF5TJYk91GAWJGMvEyZwo8BkJqGeJauAh5XZ7hJZpaGPbO13jwnl3FRyjyE8hUSoi0o9OJFxdhFlZSWlVeALpaEqvzm+iriqq4BWg61deRW7+ENjdz3miYmdaAjmw34ZnTzllZ3fm3tuDYAUwcuycBxXaensq5uVkD39JpxPML7sjhs6FeF4NLBMjDIdryZFQwNGwi3jowC2PRjdnCME88E5tpJigsvmILpmVmldQ7mice8gAW1i0sipjvUsh5WFKttjH9NvU4EGzRJsmaTQppwy9a2TMq9JEPb2WVnAfaIPbR/cChc448KHR2z0wRbiRE5J0+sPth46iJcfMZMruCcT/fMFymXhMsF+D9pbvaVuxfXVze3hXd2blnAcY/Oix9SHyX1+GHG0/Pci8XmtUmvTln0mI4G8Vue82Je7Zr23cP3jz6832BXf5ps4GfT5f62/2/tCxJR0nT7Vc40AAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDIzLTAzLTMwVDE0OjM4OjM4KzAwOjAwr8vyDgAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyMy0wMy0zMFQxNDozODozOCswMDowMN6WSrIAAABXelRYdFJhdyBwcm9maWxlIHR5cGUgaXB0YwAAeJzj8gwIcVYoKMpPy8xJ5VIAAyMLLmMLEyMTS5MUAxMgRIA0w2QDI7NUIMvY1MjEzMQcxAfLgEigSi4A6hcRdPJCNZUAAAAASUVORK5CYII=" />
   </div>
 
   <div class="model-select-wrap">
@@ -719,15 +873,48 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
   const els = ui.els;
 
   // ----- State -----
-  const conversation = [];
+  let sessionId = null;
   let currentController = null;
-  let config = { baseUrl: '', model: 'claude-sonnet-4-6', hasToken: false };
+  let streamingMsg = null;          // current assistant message div being written to
+  let streamingText = "";           // accumulated text for the current assistant message
+  let toolCards = new Map();        // tool_use_id -> card element
+  let activePermissionRequest = null; // {id, cardEl}
+
+  // Conversation persistence — mirrors what's rendered, restored on page reload.
+  // Permission cards are intentionally NOT persisted (they're transient).
+  const HISTORY_KEY = 'claudeWebHistory';
+  const HISTORY_MAX = 200;
+  let history = loadHistory();
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  }
+  function saveHistory() {
+    try {
+      const trimmed = history.slice(-HISTORY_MAX);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+      history = trimmed;
+    } catch {}
+  }
+  function pushHistory(item) {
+    history.push(item);
+    saveHistory();
+  }
+  function clearHistory() {
+    history = [];
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  }
 
   if (window.marked && window.marked.setOptions) {
     window.marked.setOptions({ breaks: true, gfm: true });
   }
 
-  // ----- Banner & error helpers -----
+  // ----- Banner / error helpers -----
   function showBanner(text, kind /* 'error' | 'info' */) {
     let banner = document.getElementById('global-banner');
     if (!banner) {
@@ -763,15 +950,14 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
   // ----- Hard fail if opened via file:// -----
   if (location.protocol === 'file:') {
     showBanner(
-      'This page must be opened through the local server. Open Terminal in the claude-web-local folder and run:  python3 server.py  — then visit http://localhost:8765/',
+      'This page must be opened through the local server. Run the launcher (ClaudeLocal.app or python3 server.py) and visit http://localhost:8765/',
       'error',
     );
     els.composerInput.disabled = true;
-    els.composerInput.placeholder = 'Run python3 server.py first to enable chat...';
+    els.composerInput.placeholder = 'Run the launcher first to enable chat...';
     els.sendBtn.disabled = true;
     els.settingsBtn.disabled = true;
     els.newChatBtn.disabled = true;
-    els.modelSelect.disabled = true;
     return;
   }
 
@@ -781,16 +967,13 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
       const r = await fetch('/api/config');
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
-      config = Object.assign(config, data);
-      els.cfgBaseUrl.value = config.baseUrl || '';
-      els.cfgToken.placeholder = config.hasToken
-        ? 'saved — leave blank to keep'
-        : 'sk-...';
-      if (!config.hasToken || !config.baseUrl) {
+      els.cfgBaseUrl.value = data.baseUrl || '';
+      els.cfgToken.placeholder = data.hasToken ? 'saved — leave blank to keep' : 'sk-...';
+      if (!data.hasToken || !data.baseUrl) {
         els.settingsDialog.showModal();
-      } else {
-        clearBanner();
+        return false;
       }
+      clearBanner();
       return true;
     } catch (e) {
       showBanner('Could not load config from local server: ' + e.message, 'error');
@@ -811,55 +994,6 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     return r.json();
   }
 
-  // ----- Models -----
-  const FALLBACK_MODELS = [
-    'claude-opus-4-7',
-    'claude-sonnet-4-6',
-    'claude-haiku-4-5-20251001',
-  ];
-
-  function prettyModelName(id) {
-    const m = id.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-(\d{8}))?/);
-    if (!m) return id;
-    const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
-    const ver = m[2] + '.' + m[3];
-    if (m[4]) {
-      return family + ' ' + ver + ' (' + m[4].slice(0, 4) + '-' + m[4].slice(4, 6) + '-' + m[4].slice(6, 8) + ')';
-    }
-    return family + ' ' + ver;
-  }
-
-  async function loadModels() {
-    let models = FALLBACK_MODELS.slice();
-    try {
-      const r = await fetch('/api/models');
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data.models) && data.models.length) {
-          models = data.models;
-        }
-      }
-    } catch { /* keep fallback */ }
-
-    els.modelSelect.innerHTML = '';
-    for (const id of models) {
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = prettyModelName(id);
-      els.modelSelect.appendChild(opt);
-    }
-    if (config.model && models.includes(config.model)) {
-      els.modelSelect.value = config.model;
-    } else {
-      config.model = els.modelSelect.value;
-    }
-  }
-
-  els.modelSelect.addEventListener('change', () => {
-    config.model = els.modelSelect.value;
-    saveConfig({ model: config.model }).catch(() => {});
-  });
-
   // ----- Settings dialog submit -----
   els.settingsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -869,14 +1003,7 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     if (url) payload.baseUrl = url;
     if (token) payload.token = token;
 
-    if (!url) {
-      showDialogError('Base URL is required.');
-      return;
-    }
-    if (!config.hasToken && !token) {
-      showDialogError('Token is required for the first save.');
-      return;
-    }
+    if (!url) return showDialogError('Base URL is required.');
 
     const orig = els.cfgSave.textContent;
     els.cfgSave.disabled = true;
@@ -886,8 +1013,8 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
       els.settingsDialog.close();
       els.cfgToken.value = '';
       clearDialogError();
-      await loadConfig();
-      await loadModels();
+      const ok = await loadConfig();
+      if (ok && !sessionId) await ensureSession();
       clearBanner();
     } catch (err) {
       showDialogError('Could not save: ' + err.message);
@@ -913,27 +1040,76 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     if (e) e.remove();
   }
 
+  // ----- Session lifecycle -----
+  async function ensureSession() {
+    const stored = localStorage.getItem('claudeWebSession');
+    if (stored) {
+      // Validate the stored id is still alive on this server instance.
+      // If the server restarted, it won't know about old sessions.
+      const ping = await fetch(`/api/session/${stored}`).catch(() => null);
+      if (ping && ping.ok) {
+        sessionId = stored;
+        return sessionId;
+      }
+      // Stale — fall through to create a fresh one
+      localStorage.removeItem('claudeWebSession');
+    }
+    const r = await fetch('/api/session', { method: 'POST' });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || ('HTTP ' + r.status));
+    }
+    const data = await r.json();
+    sessionId = data.session_id;
+    localStorage.setItem('claudeWebSession', sessionId);
+    return sessionId;
+  }
+
+  async function newSession() {
+    const old = sessionId;
+    sessionId = null;
+    localStorage.removeItem('claudeWebSession');
+    if (old) {
+      await fetch(`/api/session/${old}/new`, { method: 'POST' }).then(r => r.json()).then(d => {
+        if (d.session_id) {
+          sessionId = d.session_id;
+          localStorage.setItem('claudeWebSession', sessionId);
+        }
+      }).catch(() => {});
+    }
+    if (!sessionId) await ensureSession();
+  }
+
   // ----- New chat -----
-  els.newChatBtn.addEventListener('click', () => {
+  els.newChatBtn.addEventListener('click', async () => {
     if (currentController) currentController.abort();
-    conversation.length = 0;
     els.messages.innerHTML = '';
+    toolCards.clear();
+    streamingMsg = null;
+    streamingText = '';
+    activePermissionRequest = null;
+    clearHistory();
     ui.showEmptyState();
+    try {
+      await newSession();
+    } catch (e) {
+      appendErrorMsg('Could not start a new session: ' + e.message);
+    }
     els.composerInput.focus();
   });
 
   // ----- Render helpers -----
-  function appendUserMsg(text) {
+  function appendUserMsg(text, opts) {
     ui.hideEmptyState();
     const div = document.createElement('div');
     div.className = 'msg msg-user';
     div.textContent = text;
     els.messages.appendChild(div);
     ui.scrollToBottom(true);
-    return div;
+    if (!opts || !opts.skipPersist) pushHistory({ kind: 'user', text });
   }
 
-  function appendAssistantMsg() {
+  function startAssistantMsg() {
     ui.hideEmptyState();
     const div = document.createElement('div');
     div.className = 'msg msg-assistant';
@@ -943,16 +1119,20 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     div.appendChild(dots);
     els.messages.appendChild(div);
     ui.scrollToBottom(true);
+    streamingMsg = div;
+    streamingText = '';
     return div;
+  }
+
+  function ensureAssistantMsg() {
+    if (!streamingMsg) startAssistantMsg();
+    return streamingMsg;
   }
 
   function renderAssistant(div, buffer, streaming) {
     let html;
-    try {
-      html = window.marked.parse(buffer);
-    } catch (e) {
-      html = '<pre>' + escapeHtml(buffer) + '</pre>';
-    }
+    try { html = window.marked.parse(buffer); }
+    catch { html = '<pre>' + escapeHtml(buffer) + '</pre>'; }
     div.innerHTML = html;
     if (streaming) {
       const last = div.lastElementChild || div;
@@ -975,11 +1155,124 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   }
 
+  // ----- Tool cards -----
+  function renderToolCard(toolUseId, name, input, opts) {
+    ui.hideEmptyState();
+    // Tool cards live as their own block in the messages stream, between assistant texts.
+    streamingMsg = null;  // any subsequent text starts a new assistant block
+    const card = document.createElement('div');
+    card.className = 'msg tool-card tool-pending';
+    card.dataset.toolUseId = toolUseId;
+    card.innerHTML = `
+      <div class="tool-card-header">
+        <span class="tool-card-name">${escapeHtml(name)}</span>
+        <span class="tool-card-status">pending</span>
+      </div>
+      <div class="tool-card-body">
+        <pre class="tool-card-input">${escapeHtml(formatToolInput(name, input))}</pre>
+      </div>
+    `;
+    els.messages.appendChild(card);
+    toolCards.set(toolUseId, card);
+    ui.scrollToBottom();
+    if (!opts || !opts.skipPersist) pushHistory({ kind: 'tool_use', tool_use_id: toolUseId, name, input });
+    return card;
+  }
+
+  function updateToolCardWithResult(toolUseId, content, isError, opts) {
+    const card = toolCards.get(toolUseId);
+    if (!card) return;
+    card.classList.remove('tool-pending');
+    card.classList.add(isError ? 'tool-error' : 'tool-done');
+    const status = card.querySelector('.tool-card-status');
+    if (status) status.textContent = isError ? 'error' : 'done';
+    const body = card.querySelector('.tool-card-body');
+    const result = document.createElement('details');
+    result.className = 'tool-card-result';
+    result.innerHTML = `
+      <summary>Output</summary>
+      <pre>${escapeHtml(String(content).slice(0, 8000))}${String(content).length > 8000 ? '\n[...truncated]' : ''}</pre>
+    `;
+    body.appendChild(result);
+    ui.scrollToBottom();
+    if (!opts || !opts.skipPersist) pushHistory({ kind: 'tool_result', tool_use_id: toolUseId, content: String(content).slice(0, 8000), is_error: !!isError });
+  }
+
+  function formatToolInput(name, input) {
+    if (!input || typeof input !== 'object') return String(input ?? '');
+    if (name === 'Bash' && typeof input.command === 'string') return input.command;
+    if ((name === 'Read' || name === 'Glob' || name === 'Grep') && typeof input.file_path === 'string') return input.file_path;
+    if (name === 'Edit' && typeof input.file_path === 'string') {
+      return `${input.file_path}\n\n- ${String(input.old_string || '').slice(0, 200)}\n+ ${String(input.new_string || '').slice(0, 200)}`;
+    }
+    if (name === 'Write' && typeof input.file_path === 'string') return `${input.file_path}\n\n${String(input.content || '').slice(0, 400)}`;
+    return JSON.stringify(input, null, 2);
+  }
+
+  // ----- Permission cards -----
+  function renderPermissionCard(reqId, tool, input, summary) {
+    ui.hideEmptyState();
+    streamingMsg = null;
+    const card = document.createElement('div');
+    card.className = 'msg permission-card';
+    card.dataset.reqId = reqId;
+    card.innerHTML = `
+      <div class="permission-card-header">
+        <span class="permission-card-tool">${escapeHtml(tool)}</span>
+        <span class="permission-card-prompt">wants to run</span>
+      </div>
+      <pre class="permission-card-summary">${escapeHtml(summary || formatToolInput(tool, input))}</pre>
+      <details class="permission-card-details">
+        <summary>Full input</summary>
+        <pre>${escapeHtml(JSON.stringify(input, null, 2))}</pre>
+      </details>
+      <div class="permission-card-actions">
+        <button type="button" class="btn btn-ghost" data-decision="deny">Deny</button>
+        <button type="button" class="btn btn-ghost" data-decision="always">Allow always</button>
+        <button type="button" class="btn btn-primary" data-decision="allow">Allow</button>
+      </div>
+    `;
+    els.messages.appendChild(card);
+    activePermissionRequest = { id: reqId, cardEl: card };
+    ui.scrollToBottom(true);
+
+    card.querySelectorAll('button[data-decision]').forEach((b) => {
+      b.addEventListener('click', () => respondToPermission(reqId, b.dataset.decision));
+    });
+  }
+
+  async function respondToPermission(reqId, decision) {
+    const card = toolCards.get(reqId) || (activePermissionRequest && activePermissionRequest.cardEl) || null;
+    const target = document.querySelector(`.permission-card[data-req-id="${reqId}"]`);
+    if (target) {
+      target.querySelectorAll('button').forEach(b => b.disabled = true);
+      const status = document.createElement('div');
+      status.className = 'permission-card-decided';
+      status.textContent = decision === 'deny' ? 'Denied.' :
+                           decision === 'always' ? `Allowed. Will auto-approve this tool for the rest of this chat.` :
+                           'Allowed.';
+      target.appendChild(status);
+    }
+    try {
+      const r = await fetch('/api/permission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, request_id: reqId, decision }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error || ('HTTP ' + r.status));
+      }
+    } catch (e) {
+      appendErrorMsg('Permission request failed: ' + e.message);
+    }
+    activePermissionRequest = null;
+  }
+
   // ----- Send / stream -----
   els.composerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    // While streaming, the send button acts as a stop button.
     if (els.sendBtn.classList.contains('is-streaming')) {
       if (currentController) currentController.abort();
       return;
@@ -988,18 +1281,20 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     const text = els.composerInput.value.trim();
     if (!text) return;
 
-    if (!config.hasToken || !config.baseUrl) {
-      els.settingsDialog.showModal();
-      return;
+    if (!sessionId) {
+      try { await ensureSession(); }
+      catch (err) {
+        appendErrorMsg('Could not start session: ' + err.message);
+        return;
+      }
     }
 
     appendUserMsg(text);
-    conversation.push({ role: 'user', content: text });
     els.composerInput.value = '';
     ui.resizeInput();
 
-    const assistantDiv = appendAssistantMsg();
-    let buffer = '';
+    streamingMsg = null;
+    streamingText = '';
 
     ui.setStreaming(true);
     currentController = new AbortController();
@@ -1007,13 +1302,11 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
     try {
       const resp = await fetch('/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: config.model,
-          max_tokens: 4096,
-          stream: true,
-          messages: conversation,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': sessionId,
+        },
+        body: JSON.stringify({ message: text }),
         signal: currentController.signal,
       });
 
@@ -1044,50 +1337,136 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
           for (const line of ev.split('\n')) {
             if (!line.startsWith('data:')) continue;
             const dataStr = line.slice(5).trim();
-            if (!dataStr || dataStr === '[DONE]') continue;
+            if (!dataStr) continue;
             let data;
             try { data = JSON.parse(dataStr); } catch { continue; }
-
-            if (data.type === 'content_block_delta' && data.delta && data.delta.type === 'text_delta') {
-              buffer += data.delta.text;
-              renderAssistant(assistantDiv, buffer, true);
-              ui.scrollToBottom();
-            } else if (data.type === 'error') {
-              const m = (data.error && data.error.message) || 'stream error';
-              throw new Error(m);
-            }
+            handleEvent(data);
           }
         }
       }
-
-      // Finalize
-      renderAssistant(assistantDiv, buffer || '*(empty response)*', false);
-      conversation.push({ role: 'assistant', content: buffer });
     } catch (err) {
       if (err.name === 'AbortError') {
-        if (buffer) {
-          renderAssistant(assistantDiv, buffer + '\n\n*(stopped)*', false);
-          conversation.push({ role: 'assistant', content: buffer });
-        } else {
-          assistantDiv.remove();
-          conversation.pop();
+        if (streamingMsg && streamingText) {
+          renderAssistant(streamingMsg, streamingText + '\n\n*(stopped)*', false);
+        } else if (streamingMsg) {
+          streamingMsg.remove();
         }
       } else {
-        assistantDiv.remove();
-        conversation.pop();
+        if (streamingMsg && !streamingText) streamingMsg.remove();
         appendErrorMsg('Request failed: ' + err.message);
       }
     } finally {
+      // Finalize any in-flight assistant message (drop the streaming caret)
+      if (streamingMsg && streamingText) {
+        renderAssistant(streamingMsg, streamingText, false);
+        pushHistory({ kind: 'assistant', text: streamingText });
+      }
+      streamingMsg = null;
+      streamingText = '';
       ui.setStreaming(false);
       currentController = null;
       els.composerInput.focus();
     }
   });
 
+  // ----- SSE event dispatch -----
+  function handleEvent(evt) {
+    const t = evt.type;
+    if (t === 'stream_event') {
+      // Token-level deltas. Anthropic event lives in evt.event.
+      const inner = evt.event || {};
+      if (inner.type === 'content_block_delta' && inner.delta && inner.delta.type === 'text_delta') {
+        ensureAssistantMsg();
+        streamingText += inner.delta.text;
+        renderAssistant(streamingMsg, streamingText, true);
+        ui.scrollToBottom();
+      }
+    } else if (t === 'text_block') {
+      // Canonical final text from the SDK. Use it to reconcile if streaming missed anything.
+      ensureAssistantMsg();
+      if (evt.text && evt.text.length >= streamingText.length) {
+        streamingText = evt.text;
+        renderAssistant(streamingMsg, streamingText, true);
+      }
+    } else if (t === 'tool_use') {
+      // Finalize current assistant text block before showing the tool card
+      if (streamingMsg && streamingText) {
+        renderAssistant(streamingMsg, streamingText, false);
+        pushHistory({ kind: 'assistant', text: streamingText });
+      }
+      streamingMsg = null;
+      streamingText = '';
+      renderToolCard(evt.id, evt.name, evt.input);
+    } else if (t === 'tool_result') {
+      updateToolCardWithResult(evt.tool_use_id, evt.content, evt.is_error);
+    } else if (t === 'permission_request') {
+      // Finalize current assistant text block before showing the permission card
+      if (streamingMsg && streamingText) {
+        renderAssistant(streamingMsg, streamingText, false);
+      }
+      streamingMsg = null;
+      streamingText = '';
+      renderPermissionCard(evt.id, evt.tool, evt.input, evt.summary);
+    } else if (t === 'turn_result') {
+      // End-of-turn metadata (usage, etc). Could surface later. For now, ignore.
+    } else if (t === 'done') {
+      // Server signals turn complete. Cleanup happens in `finally` of the fetch loop.
+    } else if (t === 'error') {
+      appendErrorMsg(evt.message || 'Unknown error');
+      streamingMsg = null;
+      streamingText = '';
+    }
+  }
+
+  // ----- Heartbeat (keeps the server alive while a tab is open) -----
+  function sendHeartbeat(goodbye) {
+    const body = JSON.stringify({ session_id: sessionId, goodbye: !!goodbye });
+    if (goodbye && navigator.sendBeacon) {
+      try { navigator.sendBeacon('/api/heartbeat', new Blob([body], { type: 'application/json' })); return; } catch {}
+    }
+    fetch('/api/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  }
+  setInterval(() => sendHeartbeat(false), 15000);
+  window.addEventListener('beforeunload', () => sendHeartbeat(true));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') sendHeartbeat(false);
+  });
+
+  // ----- History rehydration -----
+  function rehydrateHistory() {
+    if (!history || !history.length) return;
+    ui.hideEmptyState();
+    for (const item of history) {
+      try {
+        if (item.kind === 'user') appendUserMsg(item.text, { skipPersist: true });
+        else if (item.kind === 'assistant') {
+          const div = document.createElement('div');
+          div.className = 'msg msg-assistant';
+          els.messages.appendChild(div);
+          renderAssistant(div, item.text, false);
+        } else if (item.kind === 'tool_use') {
+          renderToolCard(item.tool_use_id, item.name, item.input, { skipPersist: true });
+        } else if (item.kind === 'tool_result') {
+          updateToolCardWithResult(item.tool_use_id, item.content, item.is_error, { skipPersist: true });
+        }
+      } catch {}
+    }
+    ui.scrollToBottom(true);
+  }
+
   // ----- Boot -----
   (async () => {
+    rehydrateHistory();  // paint past conversation immediately, before any await
     const ok = await loadConfig();
-    if (ok) await loadModels();
+    if (ok) {
+      try { await ensureSession(); sendHeartbeat(false); }
+      catch (e) { showBanner('Could not start a Claude session: ' + e.message, 'error'); }
+    }
   })();
 })();
 </script>
