@@ -247,6 +247,14 @@ async def post_session(req: web.Request) -> web.Response:
     return web.json_response({"session_id": sid})
 
 
+async def get_session(req: web.Request) -> web.Response:
+    """Cheap ping to check if a session_id is still alive on this server."""
+    sid = req.match_info["sid"]
+    if sid in sessions:
+        return web.json_response({"ok": True})
+    return web.json_response({"error": "session not found"}, status=404)
+
+
 async def post_session_new(req: web.Request) -> web.Response:
     sid = req.match_info["sid"]
     old = sessions.pop(sid, None)
@@ -534,6 +542,7 @@ def make_app() -> web.Application:
     app.router.add_get("/api/config", get_config)
     app.router.add_post("/api/config", post_config)
     app.router.add_post("/api/session", post_session)
+    app.router.add_get("/api/session/{sid}", get_session)
     app.router.add_post("/api/session/{sid}/new", post_session_new)
     app.router.add_post("/api/messages", post_messages)
     app.router.add_post("/api/permission", post_permission)

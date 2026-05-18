@@ -1044,8 +1044,15 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
   async function ensureSession() {
     const stored = localStorage.getItem('claudeWebSession');
     if (stored) {
-      sessionId = stored;
-      return sessionId;
+      // Validate the stored id is still alive on this server instance.
+      // If the server restarted, it won't know about old sessions.
+      const ping = await fetch(`/api/session/${stored}`).catch(() => null);
+      if (ping && ping.ok) {
+        sessionId = stored;
+        return sessionId;
+      }
+      // Stale — fall through to create a fresh one
+      localStorage.removeItem('claudeWebSession');
     }
     const r = await fetch('/api/session', { method: 'POST' });
     if (!r.ok) {
@@ -1311,13 +1318,6 @@ window.marked = window.marked || (typeof marked !== "undefined" ? marked : null)
           const j = JSON.parse(errText);
           parsed = typeof j.error === 'string' ? j.error : JSON.stringify(j.error || j);
         } catch {}
-        if (resp.status === 400 && /session/i.test(String(parsed))) {
-          // Stale session, recreate and retry once
-          localStorage.removeItem('claudeWebSession');
-          sessionId = null;
-          await ensureSession();
-          throw new Error('Session was reset. Please send the message again.');
-        }
         throw new Error('Server returned ' + resp.status + ': ' + String(parsed).slice(0, 400));
       }
 
