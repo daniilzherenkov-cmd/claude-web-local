@@ -113,17 +113,3 @@ unblocks the SDK.
   was open. Reload the page to start a fresh session.
 - **Port 8765 already in use** — `CLAUDE_WEB_PORT=9000 ./launch.command`.
 
-## Sharing with colleagues
-
-For tech colleagues who already use Claude Code:
-
-1. Send them the repo URL.
-2. They `git clone`, run `./build_venv.sh`, double-click `ClaudeLocal.app`.
-
-For non-tech colleagues, use the **chat-only build** instead:
-
-```sh
-git checkout v1-chat-only
-```
-
-That's the previous, lighter version with no tool execution surface.
