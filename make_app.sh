@@ -51,6 +51,11 @@ for f in "$TMPDIR/keep"/*; do
 done
 chmod +x "$APP/Contents/Resources/launcher.sh"
 
+# osacompile adds a signature, but we then add files without re-signing which
+# breaks it. Re-sign ad-hoc (free, no Apple account needed) so macOS shows
+# "unidentified developer" (right-click → Open) instead of "damaged" (no bypass).
+codesign --force --deep --sign - "$APP" 2>/dev/null || true
+
 # Patch Info.plist for our identity & icon. osacompile sets generic values.
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName 'Claude Local'" "$PLIST" 2>/dev/null \
