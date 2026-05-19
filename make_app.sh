@@ -51,6 +51,12 @@ for f in "$TMPDIR/keep"/*; do
 done
 chmod +x "$APP/Contents/Resources/launcher.sh"
 
+# osacompile adds an ad-hoc code signature, but we then add files without
+# re-signing. A broken/mismatched signature makes macOS show "damaged and
+# can't be opened" instead of the bypassable "unidentified developer" dialog.
+# Removing the signature entirely gives the latter, which right-click → Open fixes.
+codesign --remove-signature "$APP" 2>/dev/null || true
+
 # Patch Info.plist for our identity & icon. osacompile sets generic values.
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName 'Claude Local'" "$PLIST" 2>/dev/null \
