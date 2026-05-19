@@ -14,9 +14,9 @@ cp server.py index.html ClaudeLocal.app/Contents/Resources/
 [ -f AppIcon.icns ] && cp AppIcon.icns ClaudeLocal.app/Contents/Resources/AppIcon.icns
 chmod +x ClaudeLocal.app/Contents/Resources/launcher.sh 2>/dev/null || true
 
-# Keep the bundle unsigned so Gatekeeper shows "unidentified developer"
-# (right-click → Open) rather than "damaged" (no bypass).
-codesign --remove-signature ClaudeLocal.app 2>/dev/null || true
+# Re-sign ad-hoc after modifying the bundle so macOS shows "unidentified
+# developer" (right-click → Open) instead of "damaged" (no bypass at all).
+codesign --force --deep --sign - ClaudeLocal.app 2>/dev/null || true
 
 # Reset the quarantine bit so Gatekeeper doesn't re-flag it after edits.
 # macOS xattr has no recursive flag; iterate via find.
